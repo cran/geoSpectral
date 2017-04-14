@@ -172,7 +172,6 @@ Spectra = function(inDF,Spectra,Wavelengths,Units,space,time,endTime,header,...)
 #' 
 #' #Convert the data.frame back to Spectra
 #' sp2 <- as(df, "Spectra")
-#' sp2
 #' 
 #' #Convert a bare data.frame to Spectra with minimal attributes
 #' df2 <- data.frame(ch1=c(1,2,3,4), ch2=c(5,6,7,8), TIME=Sys.time()+1:4, LAT=1:4, LON=5:8)
@@ -191,9 +190,8 @@ setAs(from="Spectra", to="data.frame", def=function(from){
   
   output$LON = from@sp@coords[,1]
   output$LAT = from@sp@coords[,2]
-  output$TIME=as.POSIXct(time(from@time))
+  output$TIME= time(from@time)
   output$ENDTIME=from@endTime
-  
   attr(output,"ShortName") = from@ShortName
   attr(output,"LongName") = from@LongName
   attr(output,"Wavelengths") = from@Wavelengths
@@ -262,7 +260,7 @@ setAs(from="data.frame", to="Spectra", def=function(from){
     endTime = from$ENDTIME
   }
   outS =geoSpectral::Spectra(data,Spectra,Wavelengths,Units=Units,
-                          header=header,ShortName=ShortName,LongName=LongName)
+                          header=header,ShortName=ShortName,LongName=LongName,endTime=endTime)
   #			outS = new("Spectra", time = TIME, endTime = endTime,
   #					Spectra=Spectra, data=data,
   #					Wavelengths=Wavelengths, Units=Units[1], 
@@ -566,13 +564,13 @@ setMethod("spc.plot", "Spectra", function (x, Y, maxSp, lab_cex,xlab,ylab,type="
     idx = seq(1,nrow(x),length.out=maxSp	)
   else
     idx = 1:nrow(x)
-  
+
   Xidx = rep(FALSE, nrow(x@Spectra))
   Xidx[idx] = TRUE
   
-  if(any(x@InvalidIdx)){
-    Xidx[x@InvalidIdx]=FALSE
-  }
+  #if(any(x@InvalidIdx)){
+  #  Xidx[x@InvalidIdx]=FALSE
+  #}
   #			if(any(x@SelectedIdx)){
   #				mycol = rep("gray", nrow(x@Spectra))
   #				mycol[x@SelectedIdx]="red"
@@ -993,7 +991,6 @@ spc.timeMatch = function(master,searched,returnList=FALSE,method="over",limits,r
       stop("Input argument 'searched' needs to either inherit from spacetime::ST class or be a timeBased variable")
   stopifnot(inherits(searched,"ST"))
   if(method=="over")
-    browser()
     out = spacetime::timeMatch(time(master),time(searched),returnList=returnList)
   if(method=="nearest"){
     out = sapply(time(master),function(x){mymin = which.min(abs(time(searched)-x))})
@@ -2214,8 +2211,28 @@ mat_identify <- function(x, y, ...){
   #  text(l, label=colnames(y)[result])
   return(result)
 }
-setGeneric (name= "spc.select",
-            def=function(object){standardGeneric("spc.select")})
+
+#########################################################################
+# spc.select
+#########################################################################
+#' Selecting rows of a \code{Spectra} object with the mouse
+#' @description
+#' This function allows the selection of \code{Spectra} rows that is drawn 
+#' with spc.plot or spc.lines. Selected lines will be colored red. Pressing
+#' the escape button will end the selection process and return selecion results.
+#' @param object A \code{Spectra} object
+#' @return logical Row indexes, TRUE for selected data rows.
+#' @examples 
+#' sp <- spc.example_spectra()
+#' spc.plot(sp)
+#' spc.setselected.idx(sp)<-spc.select(sp)
+#' 
+#' @seealso \code{\link{spc.plot}} \code{\link{spc.lines}}
+#' @rdname spc.select
+#' @export
+setGeneric (name= "spc.select",def=function(object){standardGeneric("spc.select")})
+
+#' @rdname spc.select
 setMethod("spc.select", signature = "Spectra", 
           def = function (object){
             print("Click on graph to select Spectra, click Esc to quit ")
@@ -2318,25 +2335,25 @@ setMethod("spc.plot.time", signature="Spectra", function (object,Y,maxSp=50,xdat
   
   if (length(object@InvalidIdx)==0)
     object@InvalidIdx = rep(FALSE,nrow(object@data))		
-  
+
   if(missing(Y)){
     Y = spc.colnames(object)
   }
   if(ncol(object)>maxSp)
     Y = Y[seq(1,ncol(object),length.out=maxSp)]
   
-  Y = object[[Y]][!object@InvalidIdx,]
+  tsdata = object[[Y]] #[!object@InvalidIdx,]
   
   if(missing(lab_cex))
     lab_cex = 1
   
-  tsCol = rainbow(ncol(Y))
+  tsCol = rainbow(ncol(tsdata))
   
   if(xdata=="time") {
     x = time(object)
     x = x[!object@InvalidIdx]
     xlb = "Time"
-    XX = xts::xts(Y,time(object@time))
+    XX = xts::xts(tsdata,time(object@time))
     plot.new()
     #xts::plot.xts(XX,screens=1) #,xlab="",ylab="",lwd=lwd,col=tsCol, ...)
     #xtsExtra::plot.xts(XX,screens=1, xlab="",ylab="",lwd=lwd,col=tsCol, ...)#Problem: does not plot inside the function
@@ -2346,21 +2363,16 @@ setMethod("spc.plot.time", signature="Spectra", function (object,Y,maxSp=50,xdat
     x = 1:nrow(object)
     xlb = "Observation number"
     x = x[!object@InvalidIdx]
-    matplot(x,Y, type="l", pch=19,cex=0.3,xlab="",ylab="",lwd=lwd,col=tsCol,...)        
+    matplot(x,tsdata, type="l", pch=19,cex=0.3,xlab="",ylab="",lwd=lwd,col=tsCol,...)        
   }
-  
   
   # 			df$Date <- as.Date( df$Date, '%m/%d/%Y')
   # 			require(ggplot2)
   # 			ggplot( data = df, aes( Date, Visits )) + geom_line() 
   
-  
   grid(col="black")
   
   #Draw the legend
-  if(class(Y)=="numeric")
-    Y = names(object)[Y]
-  
   if(length(Y)>1&length(Y)<=10) {
     legend("bottomright",Y,col=1:length(Y),fill=1:length(Y),bty="n",cex=lab_cex)
     ylb = bquote(.(object@LongName[1])*", ["*.(object@Units[1])*"]")	
@@ -2376,7 +2388,6 @@ setMethod("spc.plot.time", signature="Spectra", function (object,Y,maxSp=50,xdat
   }
   mtext(xlb,side=1,line=2,cex=lab_cex)
   mtext(ylb,side=2,line=2,cex=lab_cex)
-  
   #Draw the legend
   if(length(Y)>1 & length(Y)<=10)
     legend("bottomright",Y,col=1:length(Y),lty=1:length(Y),bty="n",lwd=2,cex=lab_cex)
@@ -2443,7 +2454,8 @@ setMethod("spc.plot.depth", signature="Spectra", function (object,X,maxSp=10,lab
     }
   }
   if(missing(ylim)){
-    ylim = rev(range(pretty(depth[!object@InvalidIdx],n=10)))
+    #ylim = rev(range(pretty(depth[!object@InvalidIdx],n=10)))
+    ylim = rev(range(pretty(depth,n=10)))
     ylim[2]=-0.1	
   }
   #If any, do not draw these parameters
