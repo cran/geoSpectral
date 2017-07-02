@@ -737,7 +737,7 @@ setMethod("spc.rbind", signature = "Spectra", def = function (...,compressHeader
       for(J in 1:length(sltn)){
         myslot = slot(eval((allinargs[[I]])),sltn[J])
         if(class(myslot)[1]=="SpcHeader"){
-          aa=rbind(as.data.frame(slot(outt,sltn[J]),stringsAsFactors=F), as.data.frame(myslot,,stringsAsFactors=F))
+          aa=rbind(as.data.frame(slot(outt,sltn[J]),stringsAsFactors=F), as.data.frame(myslot,stringsAsFactors=F))
           rownames(aa)=NULL
           bb = as.list(aa)
           bb = lapply(bb,function(x){names(x)<-NULL;x})
@@ -750,8 +750,12 @@ setMethod("spc.rbind", signature = "Spectra", def = function (...,compressHeader
         if(class(myslot)[1]=="logical"|class(myslot)[1]=="numeric"|
              class(myslot)[1]=="character"|class(myslot)[1]=="POSIXct")
           if(class(myslot)[1]=="POSIXct"){
-            mytz = attr(outt@endTime,"tzone")
-            slot(outt,sltn[J])<-as.POSIXct(as.POSIXlt(c(slot(outt,sltn[J]),myslot),tz=mytz))
+            mytz <- format(outt@endTime,"%Z")
+            #Check if all values are similar, throw an error otherwise
+            if (length(mytz)>1 && !do.call(all.equal, lapply(mytz, function(x)x)))
+              stop("Time zone values of all elements are not equal. Stop.")
+            slot(outt,sltn[J])<-as.POSIXct(as.POSIXlt(c(slot(outt,sltn[J]),myslot),tz=mytz[1]))
+            #browser()
           }
         if(class(myslot)[1]=="xts"){
           slot(outt,sltn[J])<-c(slot(outt,sltn[J]),myslot)
@@ -781,6 +785,7 @@ setMethod("spc.rbind", signature = "Spectra", def = function (...,compressHeader
       }
     }
   }
+  #browser()
   validObject(outt)
   return(outt) 
 })
@@ -2610,78 +2615,6 @@ spc.example_spectra <- function(){
   myS
 }
 
-#' Read the NOMAD v2 bio-optical database
-#'
-#' @description
-#' Imports the NOMAD v2 database of the SeaBASS project. More information 
-#' about this dataset can be found at \url{https://seabass.gsfc.nasa.gov/wiki/NOMAD}
-#'
-#' @param skip.all.na.rows \code{logical} whether or not eliminate records where all 
-#' channels are NAs 
-#'
-#' @return Returns an object of class \code{data.frame}.
-#'
-#' @examples
-#' ap = spc.Read_NOMAD_v2()
-#' class(ap)
-#' spc.plot.plotly(ap[[4]], plot.max=15)
-#' 
-#' @export
-# @importFrom dplyr "%>%" select
-spc.Read_NOMAD_v2 = function(skip.all.na.rows=TRUE) {
-  fnm = file.path(system.file(package = "geoSpectral"), "test_data","nomad_seabass_v2.a_2008200.txt.gz")
-  #Read data off disk
-  print(paste("Reading the NOMAD file", fnm, "off disk."))
-  mydata=read.table(fnm, header=T,sep=",", comment.char = "!")
-  
-  #Date-time conversion
-  cc=paste(mydata$year, mydata$month,mydata$day,sep="/")
-  bb=paste(mydata$hour, mydata$minute,mydata$second,sep=":")
-  a=paste(cc,bb)
-  a=strptime(a,"%Y/%m/%d %H:%M:%S")
-  mydata = mydata[,-(1:6)] #Remove cols year month day hour minute second
-  nms = names(mydata)
-  nms = gsub("lat","LAT",nms)
-  nms = gsub("lon","LON",nms)
-  names(mydata)=nms
-  mydata = cbind(mydata, TIME=as.POSIXct(a))
-  mydata[mydata==-999]=NA
-  
-  ShortNames = c("kd","lw","es","ap","ad","ag","a","bb","bbr")
-  idx=lapply(ShortNames, function(x) {
-    i = regexpr(paste0("^",x,"[[:digit:]][[:digit:]][[:digit:]]$"), names(mydata))
-    i = which(i!=-1)
-    i
-    #grep(glob2rx(paste0(x,"???")), names(mydata))
-  })
-  #Extract Spectral data
-  sp = lapply(idx, function(x) mydata[,x])
-  #Cleanup mydata from Spectral data
-  mydata = mydata [, -do.call(c, idx)]
-  
-  #Reorder columns
-  #mydata = mydata %>% dplyr::select(TIME, LON, LAT, cruise, flag, everything())
-  mydata = mydata %>% dplyr::select_("TIME", "LON", "LAT", "cruise", "flag", everything())
-  
-  out = lapply(1:length(ShortNames), function(x) {
-    #Find rows that do not contain NAs
-    lbd = as.numeric(gsub(ShortNames[x], "", names(sp[[x]])))
-    #out = mydata[complete.cases(mydata[,idx[[x]]]),c(names(mydata)[idx[[x]]],"datetime","latitude","longitude")]    out = Spectra(out, Wavelengths = lbd,ShortName=ShortNames[x],time="TIME",Units="1/m")
-    
-    out = cbind(sp[[x]], mydata)
-    
-    if (skip.all.na.rows){
-      #Find rows where there at least some data
-      na_idx = !apply((apply(sp[[x]], 2, is.na)),1,all)
-      out = out[na_idx,]
-    }
-    out = Spectra(out, Wavelengths = lbd,ShortName=ShortNames[x],time="TIME",Units="1/m")
-    spc.colnames(out)<-spc.cname.construct(out)
-    return (out)
-  })
-  names(out) = ShortNames
-  out
-}
 #' Plot a Spectra object data 
 #' @description
 #' Plot a \code{Spectra} object with plotly engine 
